@@ -1,16 +1,17 @@
-from geotext import GeoText
-import spacy
-import pandas as pd
-from flair.data import Sentence
-from flair.models import SequenceTagger
 import ast
 import re
+
 import gensim.downloader as api
+import pandas as pd
+import spacy
+from flair.data import Sentence
+from flair.models import SequenceTagger
+from geotext import GeoText
 
 # python -m spacy download en_core_web_sm
 # python -m spacy download en_core_web_trf
 
-alphabets= "([A-Za-z])"
+alphabets = "([A-Za-z])"
 prefixes = "(Mr|St|Mrs|Ms|Dr)[.]"
 suffixes = "(Inc|Ltd|Jr|Sr|Co)"
 starters = "(Mr|Mrs|Ms|Dr|Prof|Capt|Cpt|Lt|He\s|She\s|It\s|They\s|Their\s|Our\s|We\s|But\s|However\s|That\s|This\s|Wherever)"
@@ -18,8 +19,10 @@ acronyms = "([A-Z][.][A-Z][.](?:[A-Z][.])?)"
 websites = "[.](com|net|org|io|gov|edu|me)"
 digits = "([0-9])"
 
+
 def add_to_csv(df, path):
     df.to_csv(path, mode='a', header=False, index=False)
+
 
 class LocationExtractor:
     def get_geotext_articles(self, row):
@@ -45,91 +48,103 @@ class LocationExtractor:
             return False, None, None
 
     def get_strategy_2(self, row, df_simplemaps):
-       result_county = {}
-       result_state = {}
-       counties = row['counties'].split('\n')[:-1]
-       states = row['states'].split('\n')[:-1]
-       for location in row['US_cities']:
-           result_state[location] = ''
-           result_county[location] = ''
-       for county in counties:
-           county = county.replace("'", "")
-           query = county.split(':')[0]
-           result = county.split(':')[1].split(',')
-           result_county[query] = result
-       for state in states:
-           state = state.replace("'", "")
-           query = state.split(':')[0]
-           result = state.split(':')[1].split(',')
-           result_state[query] = result
-       for location in row['US_cities']:
-           if len(result_county[location]) > 1 and len(result_state[location]) > 1:
-               df_county = df_simplemaps.query("city == \'" + location + "\'")
-               df_county.sort_values('population')
-               if df_county['population'].iloc[0].tolist() > 50000:
-                   row['strategy_2'] = row['strategy_2'] + location + ', ' + df_county['county_name'].iloc[0] + ', ' + df_county['state_name'].iloc[0] + '\n'
+        result_county = {}
+        result_state = {}
+        counties = row['counties'].split('\n')[:-1]
+        states = row['states'].split('\n')[:-1]
+        for location in row['US_cities']:
+            result_state[location] = ''
+            result_county[location] = ''
+        for county in counties:
+            county = county.replace("'", "")
+            query = county.split(':')[0]
+            result = county.split(':')[1].split(',')
+            result_county[query] = result
+        for state in states:
+            state = state.replace("'", "")
+            query = state.split(':')[0]
+            result = state.split(':')[1].split(',')
+            result_state[query] = result
+        for location in row['US_cities']:
+            if len(result_county[location]) > 1 and len(result_state[location]) > 1:
+                df_county = df_simplemaps.query("city == \'" + location + "\'")
+                df_county.sort_values('population')
+                if df_county['population'].iloc[0].tolist() > 50000:
+                    row['strategy_2'] = row['strategy_2'] + location + ', ' + df_county['county_name'].iloc[0] + ', ' + \
+                                        df_county['state_name'].iloc[0] + '\n'
 
-           if len(result_county[location]) == 1 and len(result_state[location]) > 1:
-               try:
-                   df_county = df_simplemaps.query("city == \'" + location + "\'" + " and county_name == \'" + result_county[location][0] + "\'")
-                   row['strategy_2'] = row['strategy_2'] + location + ', ' + result_county[location][0] + ', ' + df_county['state_name'].iloc[0] + '\n'
-               except:
-                   pass
+            if len(result_county[location]) == 1 and len(result_state[location]) > 1:
+                try:
+                    df_county = df_simplemaps.query(
+                        "city == \'" + location + "\'" + " and county_name == \'" + result_county[location][0] + "\'")
+                    row['strategy_2'] = row['strategy_2'] + location + ', ' + result_county[location][0] + ', ' + \
+                                        df_county['state_name'].iloc[0] + '\n'
+                except:
+                    pass
 
-           if len(result_state[location]) == 1 and len(result_county[location]) > 1:
-               try:
-                   df_county = df_simplemaps.query("city == \'" + location + "\'" + " and state_name == \'" + result_state[location][0] + "\'")
-                   row['strategy_2'] = row['strategy_2'] + location + ', ' + df_county['county_name'].iloc[0] + ', ' + result_state[location][0] + '\n'
-               except:
-                   pass
+            if len(result_state[location]) == 1 and len(result_county[location]) > 1:
+                try:
+                    df_county = df_simplemaps.query(
+                        "city == \'" + location + "\'" + " and state_name == \'" + result_state[location][0] + "\'")
+                    row['strategy_2'] = row['strategy_2'] + location + ', ' + df_county['county_name'].iloc[0] + ', ' + \
+                                        result_state[location][0] + '\n'
+                except:
+                    pass
 
-           if len(result_state[location]) == 1 and len(result_county[location]) == 1:
-               row['strategy_2'] = row['strategy_2'] + location + ', ' + result_county[location][0] + ', ' + result_state[location][0] + '\n'
+            if len(result_state[location]) == 1 and len(result_county[location]) == 1:
+                row['strategy_2'] = row['strategy_2'] + location + ', ' + result_county[location][0] + ', ' + \
+                                    result_state[location][0] + '\n'
 
     def get_strategy_1(self, row, df_simplemaps):
-       result_county = {}
-       result_state = {}
-       counties = row['counties'].split('\n')[:-1]
-       states = row['states'].split('\n')[:-1]
-       for location in row['US_cities']:
-           result_state[location] = ''
-           result_county[location] = ''
-       for county in counties:
-           query = county.split(':')[0]
-           result = county.split(':')[1].split(',')
-           if len(result) > 1:
-               for county in result:
-                   if county in row['US_cities']:
-                       result_county[query] = county
-           else:
-               result_county[query] = result[0]
+        result_county = {}
+        result_state = {}
+        counties = row['counties'].split('\n')[:-1]
+        states = row['states'].split('\n')[:-1]
+        for location in row['US_cities']:
+            result_state[location] = ''
+            result_county[location] = ''
+        for county in counties:
+            query = county.split(':')[0]
+            result = county.split(':')[1].split(',')
+            if len(result) > 1:
+                for county in result:
+                    if county in row['US_cities']:
+                        result_county[query] = county
+            else:
+                result_county[query] = result[0]
 
-       for state in states:
-           query = state.split(':')[0]
-           result = state.split(':')[1].split(',')
-           if len(result) > 1:
-               for state in result:
-                   if state in row['US_cities']:
-                       result_state[query] = state
-           else:
-               result_state[query] = result[0]
-       for location in row['US_cities']:
-          if result_county[location] != '' and result_state[location] != '':
-              row['strategy_1'] = row['strategy_1'] + location + ', ' + result_county[location] + ', ' + result_state[location] + '\n'
-          if result_county[location] != '' and result_state[location] == '':
-              try:
-                  df_state = df_simplemaps.query("city == \'" + location + "\'" + " and county_name == \'" + result_county[location] + "\'")
-                  result_state[location] = df_state['state_name'].tolist()[0]
-                  row['strategy_1'] = row['strategy_1'] + location + ', ' + result_county[location] + ', ' + result_state[location] + '\n'
-              except:
-                  pass
-          if result_county[location] == '' and result_state[location] != '':
-              try:
-                  df_county = df_simplemaps.query("city == \'" + location + "\'" + " and state_name == \'" + result_state[location] + "\'")
-                  result_county[location] = df_county['county_name'].tolist()[0]
-                  row['strategy_1'] = row['strategy_1'] + location + ', ' + result_county[location] + ', ' + result_state[location] + '\n'
-              except:
-                  pass
+        for state in states:
+            query = state.split(':')[0]
+            result = state.split(':')[1].split(',')
+            if len(result) > 1:
+                for state in result:
+                    if state in row['US_cities']:
+                        result_state[query] = state
+            else:
+                result_state[query] = result[0]
+        for location in row['US_cities']:
+            if result_county[location] != '' and result_state[location] != '':
+                row['strategy_1'] = row['strategy_1'] + location + ', ' + result_county[location] + ', ' + result_state[
+                    location] + '\n'
+            if result_county[location] != '' and result_state[location] == '':
+                try:
+                    df_state = df_simplemaps.query(
+                        "city == \'" + location + "\'" + " and county_name == \'" + result_county[location] + "\'")
+                    result_state[location] = df_state['state_name'].tolist()[0]
+                    row['strategy_1'] = row['strategy_1'] + location + ', ' + result_county[location] + ', ' + \
+                                        result_state[location] + '\n'
+                except:
+                    pass
+            if result_county[location] == '' and result_state[location] != '':
+                try:
+                    df_county = df_simplemaps.query(
+                        "city == \'" + location + "\'" + " and state_name == \'" + result_state[location] + "\'")
+                    result_county[location] = df_county['county_name'].tolist()[0]
+                    row['strategy_1'] = row['strategy_1'] + location + ', ' + result_county[location] + ', ' + \
+                                        result_state[location] + '\n'
+                except:
+                    pass
+
 
 class NLPExtractor:
     def __init__(self):
@@ -147,8 +162,11 @@ class NLPExtractor:
         return clear_numbers[:-2]
 
     def check_cardinal(self, df):
-        df['Size_context'] = df['Text'].apply(lambda x: [(str(df['Text'][0][entity.start:]).split(" ", 4)[:4]) for entity in x.ents if entity.label_ == 'CARDINAL' or entity.label_ == 'QUANTITY'])
-        df['Gathered_size'] = df['Text'].apply(lambda x: [entity.text for entity in x.ents if entity.label_ == 'CARDINAL' or entity.label_ == 'QUANTITY'])
+        df['Size_context'] = df['Text'].apply(
+            lambda x: [(str(df['Text'][0][entity.start:]).split(" ", 4)[:4]) for entity in x.ents if
+                       entity.label_ == 'CARDINAL' or entity.label_ == 'QUANTITY'])
+        df['Gathered_size'] = df['Text'].apply(
+            lambda x: [entity.text for entity in x.ents if entity.label_ == 'CARDINAL' or entity.label_ == 'QUANTITY'])
         return df
 
     def get_gathering_amount(self, text):
@@ -229,7 +247,6 @@ class NLPExtractor:
     def get_location(self, df):
         possible_loc_list = []
         df['Location_spacy'] = df['Text'].apply(lambda x: [entity.text for entity in x.ents if entity.label_ == 'GPE'])
-        text = [entity.text for entity in df['Text'][0] if entity.pos_ == 'PROPN']
         for i in range(len(df['Text'][0])):
             if df['Text'][0][i].pos_ == 'PROPN':
                 possible_loc = df['Text'][0][i].text
@@ -247,8 +264,10 @@ class NLPExtractor:
         new_text = ', '.join(possible_loc_list)
         locations = Sentence(new_text)
         self.tagger.predict(locations)
-        df['Location_flair'] = str([entity.text for entity in locations.get_spans('ner') if entity.get_label("ner").value == 'LOC'])
+        df['Location_flair'] = str(
+            [entity.text for entity in locations.get_spans('ner') if entity.get_label("ner").value == 'LOC'])
         return df
+
 
 class TextProcessing:
     def remove_cookies(self, text):
@@ -256,36 +275,36 @@ class TextProcessing:
         filtered_paragraphs = [par.strip() for par in paragraphs if
                                "cookies" not in par and "[" not in par and "]" not in par]
         cleared_text = ' '.join(filtered_paragraphs)
-        print(cleared_text)
         return cleared_text
 
     def split_into_sentences(self, text):
         text = " " + text + "  "
-        text = text.replace("\n"," ")
-        text = re.sub(prefixes,"\\1<prd>",text)
-        text = re.sub(websites,"<prd>\\1",text)
-        text = re.sub(digits + "[.]" + digits,"\\1<prd>\\2",text)
-        if "..." in text: text = text.replace("...","<prd><prd><prd>")
-        if "Ph.D" in text: text = text.replace("Ph.D.","Ph<prd>D<prd>")
-        text = re.sub("\s" + alphabets + "[.] "," \\1<prd> ",text)
-        text = re.sub(acronyms+" "+starters,"\\1<stop> \\2",text)
-        text = re.sub(alphabets + "[.]" + alphabets + "[.]" + alphabets + "[.]","\\1<prd>\\2<prd>\\3<prd>",text)
-        text = re.sub(alphabets + "[.]" + alphabets + "[.]","\\1<prd>\\2<prd>",text)
-        text = re.sub(" "+suffixes+"[.] "+starters," \\1<stop> \\2",text)
-        text = re.sub(" "+suffixes+"[.]"," \\1<prd>",text)
-        text = re.sub(" " + alphabets + "[.]"," \\1<prd>",text)
-        if "”" in text: text = text.replace(".”","”.")
-        if "\"" in text: text = text.replace(".\"","\".")
-        if "!" in text: text = text.replace("!\"","\"!")
-        if "?" in text: text = text.replace("?\"","\"?")
-        text = text.replace(".",".<stop>")
-        text = text.replace("?","?<stop>")
-        text = text.replace("!","!<stop>")
-        text = text.replace("<prd>",".")
+        text = text.replace("\n", " ")
+        text = re.sub(prefixes, "\\1<prd>", text)
+        text = re.sub(websites, "<prd>\\1", text)
+        text = re.sub(digits + "[.]" + digits, "\\1<prd>\\2", text)
+        if "..." in text: text = text.replace("...", "<prd><prd><prd>")
+        if "Ph.D" in text: text = text.replace("Ph.D.", "Ph<prd>D<prd>")
+        text = re.sub("\s" + alphabets + "[.] ", " \\1<prd> ", text)
+        text = re.sub(acronyms + " " + starters, "\\1<stop> \\2", text)
+        text = re.sub(alphabets + "[.]" + alphabets + "[.]" + alphabets + "[.]", "\\1<prd>\\2<prd>\\3<prd>", text)
+        text = re.sub(alphabets + "[.]" + alphabets + "[.]", "\\1<prd>\\2<prd>", text)
+        text = re.sub(" " + suffixes + "[.] " + starters, " \\1<stop> \\2", text)
+        text = re.sub(" " + suffixes + "[.]", " \\1<prd>", text)
+        text = re.sub(" " + alphabets + "[.]", " \\1<prd>", text)
+        if "”" in text: text = text.replace(".”", "”.")
+        if "\"" in text: text = text.replace(".\"", "\".")
+        if "!" in text: text = text.replace("!\"", "\"!")
+        if "?" in text: text = text.replace("?\"", "\"?")
+        text = text.replace(".", ".<stop>")
+        text = text.replace("?", "?<stop>")
+        text = text.replace("!", "!<stop>")
+        text = text.replace("<prd>", ".")
         sentences = text.split("<stop>")
         sentences = sentences[:-1]
         sentences = [s.strip() for s in sentences]
         return sentences
+
 
 class ProcessingStages:
     def __init__(self):
@@ -294,76 +313,80 @@ class ProcessingStages:
         self.nlp = spacy.load('en_core_web_sm')
 
     def get_county(self, path, save_path):
-       df_2 = pd.read_csv(path)
-       df_simplemaps = pd.read_csv("uscities.csv").replace("'", "")
-       df_2.fillna(" ",inplace=True)
-       df_2.columns = ["Url", "Text", "Title", "Article_date", "spacy_loc", "flair_loc", "dates", "numbers_context", "numbers", "Mentions", "US_cities"]
-       states = list(set(df_simplemaps['state_name'].tolist()))
-       for index, row in df_2.iterrows():
-           city_list = list(set(ast.literal_eval(str(row['US_cities']))))
-           row['US_cities'] = city_list
-           row['counties'] = ''
-           row['states'] = ''
-           row['strategy_1'] = ''
-           row['strategy_2'] = ''
-           if city_list:
-               for city in city_list:
-                   if city in states:
-                       row['states'] = row['states'] + city + ":" + city + '\n'
-                   else:
-                       df_county = df_simplemaps.query("city == \'" + city + "\'")
-                       if df_county.empty == False:
-                           row['counties'] = row['counties'] + city + ":" + ','.join(df_county['county_name'].tolist())+ '\n'
-                           row['states'] = row['states'] + city + ":" + ','.join(df_county['state_name'].tolist()) + '\n'
-               if row['counties'] != '':
-                   self.locations_extractor.get_strategy_1(row, df_simplemaps)
-                   self.locations_extractor.get_strategy_2(row, df_simplemaps)
-                   if row['strategy_1'] != '' or row['strategy_2'] != '':
-                       add_to_csv(pd.DataFrame([row]), save_path)
-
+        df = pd.read_csv(path)
+        df_simplemaps = pd.read_csv("uscities.csv").replace("'", "")
+        df.fillna(" ", inplace=True)
+        df.columns = ["Url", "Text", "Title", "Article_date", "spacy_loc", "flair_loc", "dates", "numbers_context",
+                      "numbers", "Mentions", "US_cities"]
+        states = list(set(df_simplemaps['state_name'].tolist()))
+        for index, row in df.iterrows():
+            city_list = list(set(ast.literal_eval(str(row['US_cities']))))
+            row['US_cities'] = city_list
+            row['counties'] = ''
+            row['states'] = ''
+            row['strategy_1'] = ''
+            row['strategy_2'] = ''
+            if city_list:
+                for city in city_list:
+                    if city in states:
+                        row['states'] = row['states'] + city + ":" + city + '\n'
+                    else:
+                        df_county = df_simplemaps.query("city == \'" + city + "\'")
+                        if df_county.empty == False:
+                            row['counties'] = row['counties'] + city + ":" + ','.join(
+                                df_county['county_name'].tolist()) + '\n'
+                            row['states'] = row['states'] + city + ":" + ','.join(
+                                df_county['state_name'].tolist()) + '\n'
+                if row['counties'] != '':
+                    self.locations_extractor.get_strategy_1(row, df_simplemaps)
+                    self.locations_extractor.get_strategy_2(row, df_simplemaps)
+                    if row['strategy_1'] != '' or row['strategy_2'] != '':
+                        add_to_csv(pd.DataFrame([row]), save_path)
 
     def get_stage_1_articles(self, path, save_path):
-       df = pd.read_csv(path)
-       df.fillna("nan",inplace=True)
-       df.columns = ["Url", "Text", "Title", "Article_date", "spacy_loc", "flair_loc", "dates", "numbers_context", "numbers"]
-       for index, row in df.iterrows():
-           if row['Text'] != 'nan':
-               country_mentions, mentions_lst = self.locations_extractor.get_geotext_articles(row)
-               row["Mentions"] = ', '.join(country_mentions)
-               if len(row["Mentions"]) > 0:
-                   add_to_csv(pd.DataFrame([row]), save_path)
+        df = pd.read_csv(path)
+        df.fillna("nan", inplace=True)
+        df.columns = ["Url", "Text", "Title", "Article_date", "spacy_loc", "flair_loc", "dates", "numbers_context",
+                      "numbers"]
+        for index, row in df.iterrows():
+            if row['Text'] != 'nan':
+                country_mentions, mentions_lst = self.locations_extractor.get_geotext_articles(row)
+                row["Mentions"] = ', '.join(country_mentions)
+                if len(row["Mentions"]) > 0:
+                    add_to_csv(pd.DataFrame([row]), save_path)
 
     def most_mentions(self, path, save_path):
-       df = pd.read_csv(path)
-       df.fillna("nan",inplace=True)
-       df.columns = ["Url", "Text", "Title", "Article_date", "spacy_loc", "flair_loc", "dates", "numbers_context", "numbers", "Mentions"]
-       for index, row in df.iterrows():
-           if row['Text'] != 'nan':
-               if_US, US_mentions, mentions_lst = self.locations_extractor.get_US_geotext_articles(row)
-               if if_US:
-                   row['US_cities'] = US_mentions
-                   add_to_csv(pd.DataFrame([row]), save_path)
+        df = pd.read_csv(path)
+        df.fillna("nan", inplace=True)
+        df.columns = ["Url", "Text", "Title", "Article_date", "spacy_loc", "flair_loc", "dates", "numbers_context",
+                      "numbers", "Mentions"]
+        for index, row in df.iterrows():
+            if row['Text'] != 'nan':
+                if_US, US_mentions, mentions_lst = self.locations_extractor.get_US_geotext_articles(row)
+                if if_US:
+                    row['US_cities'] = US_mentions
+                    add_to_csv(pd.DataFrame([row]), save_path)
 
     def get_data_articles(self, path, save_path, sample):
-       df = pd.read_csv(path)
-       df = df.sample(n=sample, random_state=1)
-       df.to_csv("sample.csv")
-       df = pd.read_csv("sample.csv")
-       df.fillna("nan",inplace=True)
-       df.columns = ["idx", "Text", "Title", "Code", "Url", "Date"]
-       for index, row in df.iterrows():
-           if row['Text'] != 'nan':
-               row['Text'] = TextProcessing().remove_cookies(row['Text'])
-               if len(row['Text']) < 300000:
-                   df_row = pd.DataFrame({'Url':[row['Url']]})
-                   df_row["Text"] = [self.nlp(row['Text'])]
-                   df_row["Title"] = row["Title"]
-                   df_row["Article_date"] = row["Date"]
-                   df_row = self.nlp_extractor.get_location(df_row)
-                   df_row = self.nlp_extractor.get_date(df_row)
-                   df_row = self.nlp_extractor.check_cardinal(df_row)
-                   df_row["Text"] = row['Text']
-                   add_to_csv(df_row, save_path)
+        df = pd.read_csv(path)
+        df = df.sample(n=sample, random_state=1)
+        df.to_csv("sample.csv")
+        df = pd.read_csv("sample.csv")
+        df.fillna("nan", inplace=True)
+        df.columns = ["idx", "Text", "Title", "Code", "Url", "Date"]
+        for index, row in df.iterrows():
+            if row['Text'] != 'nan':
+                row['Text'] = TextProcessing().remove_cookies(row['Text'])
+                if len(row['Text']) < 300000:
+                    df_row = pd.DataFrame({'Url': [row['Url']]})
+                    df_row["Text"] = [self.nlp(row['Text'])]
+                    df_row["Title"] = row["Title"]
+                    df_row["Article_date"] = row["Date"]
+                    df_row = self.nlp_extractor.get_location(df_row)
+                    df_row = self.nlp_extractor.get_date(df_row)
+                    df_row = self.nlp_extractor.check_cardinal(df_row)
+                    df_row["Text"] = row['Text']
+                    add_to_csv(df_row, save_path)
 
     def get_gather_filter(self, path, save_path):
         df = pd.read_csv(path)
@@ -375,15 +398,15 @@ class ProcessingStages:
         df = df[df[['GATHERING_NUMBER']].notnull().all(1)]
         df = df[~df['TENSE/PT/FT'].str.contains('future')]
         df.to_csv(save_path, index=False)
-        df.to_excel("/home/teks/PycharmProjects/trends_plots/gather_filter.xlsx")
+        df.to_excel(save_path[:-4] + ".xlsx")
 
 
 pd.set_option('display.max_columns', None)
-sample = 10
+sample = 100
 
 covid_process = ProcessingStages()
 covid_process.get_data_articles("dataset_v5_1_full.csv", 'dataset_stage_1.csv', sample)
-#covid_process.get_stage_1_articles('dataset_stage_1.csv', 'dataset_country_mentions.csv')
-#covid_process.most_mentions('dataset_country_mentions.csv', 'dataset_US.csv')
-#covid_process.get_county("dataset_US.csv", "dataset_strategies.csv")
-#covid_process.get_gather_filter("dataset_strategies.csv", "dataset_gathering.csv")
+covid_process.get_stage_1_articles('dataset_stage_1.csv', 'dataset_country_mentions.csv')
+covid_process.most_mentions('dataset_country_mentions.csv', 'dataset_US.csv')
+covid_process.get_county("dataset_US.csv", "dataset_strategies.csv")
+covid_process.get_gather_filter("dataset_strategies.csv", "dataset_gathering.csv")
