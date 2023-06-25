@@ -21,11 +21,30 @@ digits = "([0-9])"
 
 
 def add_to_csv(df, path):
+    """
+    Function to add a DataFrame to a CSV file.
+
+    Args:
+        df (pandas.DataFrame): DataFrame to be added.
+        path (str): Path to the CSV file.
+
+    Returns:
+        None
+    """
     df.to_csv(path, mode='a', header=False, index=False)
 
 
 class LocationExtractor:
     def get_geotext_articles(self, row):
+        """
+        Function to extract locations using GeoText from the 'spacy_loc' and 'flair_loc' columns of a row.
+
+        Args:
+            row (pandas.Series): Row containing the 'spacy_loc' and 'flair_loc' columns.
+
+        Returns:
+            tuple: A tuple containing a list of mentions and a dictionary of country mentions.
+        """
         res = GeoText(str(row['spacy_loc']) + str(row['flair_loc']))
         mentions = []
         for city in res.cities:
@@ -37,6 +56,16 @@ class LocationExtractor:
         return mentions, res.country_mentions
 
     def get_US_geotext_articles(self, row):
+        """
+        Function to extract US locations using GeoText from the 'Mentions' column of a row.
+
+        Args:
+            row (pandas.Series): Row containing the 'Mentions' column.
+
+        Returns:
+            tuple: A tuple containing a boolean value indicating if the US is mentioned,
+                   a list of US city mentions, and a dictionary of country mentions.
+        """
         res = GeoText(row['Mentions'])
         mentions = []
         for city in res.cities:
@@ -48,23 +77,37 @@ class LocationExtractor:
             return False, None, None
 
     def get_strategy_2(self, row, df_simplemaps):
+        """
+        Function to extract locations using strategy 2 from the row and the SimpleMaps dataset.
+    
+        Args:
+            row (pandas.Series): Row containing the relevant columns.
+            df_simplemaps (pandas.DataFrame): SimpleMaps dataset containing city, county, and state information.
+    
+        Returns:
+            None
+        """
         result_county = {}
         result_state = {}
         counties = row['counties'].split('\n')[:-1]
         states = row['states'].split('\n')[:-1]
+        # Initialize result dictionaries for each location
         for location in row['US_cities']:
             result_state[location] = ''
             result_county[location] = ''
+        # Process county information
         for county in counties:
             county = county.replace("'", "")
             query = county.split(':')[0]
             result = county.split(':')[1].split(',')
             result_county[query] = result
+        # Process state information
         for state in states:
             state = state.replace("'", "")
             query = state.split(':')[0]
             result = state.split(':')[1].split(',')
             result_state[query] = result
+        # Extract locations using strategy 2
         for location in row['US_cities']:
             if len(result_county[location]) > 1 and len(result_state[location]) > 1:
                 df_county = df_simplemaps.query("city == \'" + location + "\'")
@@ -96,13 +139,25 @@ class LocationExtractor:
                                     result_state[location][0] + '\n'
 
     def get_strategy_1(self, row, df_simplemaps):
+        """
+        Function to extract locations using strategy 1 from the row and the SimpleMaps dataset.
+    
+        Args:
+            row (pandas.Series): Row containing the relevant columns.
+            df_simplemaps (pandas.DataFrame): SimpleMaps dataset containing city, county, and state information.
+    
+        Returns:
+            None
+        """
         result_county = {}
         result_state = {}
         counties = row['counties'].split('\n')[:-1]
         states = row['states'].split('\n')[:-1]
+        # Initialize result dictionaries for each location
         for location in row['US_cities']:
             result_state[location] = ''
             result_county[location] = ''
+        # Process county information
         for county in counties:
             query = county.split(':')[0]
             result = county.split(':')[1].split(',')
@@ -112,7 +167,7 @@ class LocationExtractor:
                         result_county[query] = county
             else:
                 result_county[query] = result[0]
-
+        # Process state information
         for state in states:
             query = state.split(':')[0]
             result = state.split(':')[1].split(',')
@@ -122,6 +177,7 @@ class LocationExtractor:
                         result_state[query] = state
             else:
                 result_state[query] = result[0]
+        # Extract locations using strategy 1
         for location in row['US_cities']:
             if result_county[location] != '' and result_state[location] != '':
                 row['strategy_1'] = row['strategy_1'] + location + ', ' + result_county[location] + ', ' + result_state[
