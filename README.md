@@ -118,9 +118,7 @@ In `strategy_2`, the algorithm further refines the county and state information 
      - If the population of the first county is greater than 50,000:
        - Append the city, county name, and state name information to the "strategy_2" field in the row.
    - If `result_county[location]` has only one county and `result_state[location]` has more than one state:
-     - Query the `df_simplemaps` dataset to retrieve the
-
- county information for the location and the specified county.
+     - Query the `df_simplemaps` dataset to retrieve the county information for the location and the specified county.
      - If successful, append the city, county, and state information to the "strategy_2" field in the row.
    - If `result_state[location]` has only one state and `result_county[location]` has more than one county:
      - Query the `df_simplemaps` dataset to retrieve the county information for the location and the specified state.
