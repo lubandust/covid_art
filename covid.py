@@ -210,6 +210,15 @@ class NLPExtractor:
         self.tagger = SequenceTagger.load('ner')
 
     def get_number(self, text):
+        """
+        Extract numbers from the given text.
+
+        Args:
+            text (str): The input text.
+
+        Returns:
+            str: A comma-separated string of extracted numbers, or 'nan' if no numbers are found.
+        """
         clear_numbers = ""
         doc = self.nlp(text)
         for entity in doc.ents:
@@ -218,6 +227,15 @@ class NLPExtractor:
         return clear_numbers[:-2]
 
     def check_cardinal(self, df):
+        """
+        Check for cardinal numbers in the given DataFrame.
+
+        Args:
+            df (pandas.DataFrame): The DataFrame containing the 'Text' column.
+
+        Returns:
+            pandas.DataFrame: The updated DataFrame with additional columns 'Size_context' and 'Gathered_size'.
+        """
         df['Size_context'] = df['Text'].apply(
             lambda x: [(str(df['Text'][0][entity.start:]).split(" ", 4)[:4]) for entity in x.ents if
                        entity.label_ == 'CARDINAL' or entity.label_ == 'QUANTITY'])
@@ -226,6 +244,15 @@ class NLPExtractor:
         return df
 
     def get_gathering_amount(self, text):
+        """
+        Extract gathering amounts from the given text.
+
+        Args:
+            text (str): The input text.
+
+        Returns:
+            str: A comma-separated string of extracted gathering amounts.
+        """
         x = ast.literal_eval(text)
         gathering_numbers = ""
         for chunk in x:
@@ -250,6 +277,15 @@ class NLPExtractor:
         return gathering_numbers
 
     def detect_tense(self, text):
+        """
+        Detect the tense of the given text.
+
+        Args:
+            text (str): The input text.
+
+        Returns:
+            str: The detected tense ('past_tense', 'present_tense', or 'future_tense').
+        """
         tex = text.replace('\n', ' ')
         sents = re.split(r'(?<=[^A-Z].[.?]) +(?=[A-Z])', tex)
         tenses = {"past_tense": 0, "present_tense": 0, "future_tense": 0}
@@ -269,6 +305,15 @@ class NLPExtractor:
         return tense
 
     def identify_futuristic(self, df):
+        """
+        Identify futuristic information in the given DataFrame.
+
+        Args:
+            df (pandas.DataFrame): The DataFrame containing the 'GATHERING_AMOUNT' and 'TEXT' columns.
+
+        Returns:
+            pandas.DataFrame: The updated DataFrame with additional columns 'GATHER_SENTS' and 'TENSE/PT/FT'.
+        """
         lines = df["GATHERING_AMOUNT"].split(', ')
         lines = list(filter(None, lines))
         sents = TextProcessing().split_into_sentences(df["TEXT"])
@@ -297,10 +342,28 @@ class NLPExtractor:
         return df
 
     def get_date(self, df):
+        """
+        Extract dates from the given DataFrame.
+
+        Args:
+            df (pandas.DataFrame): The DataFrame containing the 'Text' column.
+
+        Returns:
+            pandas.DataFrame: The updated DataFrame with an additional 'Date' column.
+        """
         df['Date'] = df['Text'].apply(lambda x: [entity.text for entity in x.ents if entity.label_ == 'DATE'])
         return df
 
     def get_location(self, df):
+        """
+        Extract locations from the given DataFrame.
+
+        Args:
+            df (pandas.DataFrame): The DataFrame containing the 'Text' column.
+
+        Returns:
+            pandas.DataFrame: The updated DataFrame with additional columns 'Location_spacy' and 'Location_flair'.
+        """
         possible_loc_list = []
         df['Location_spacy'] = df['Text'].apply(lambda x: [entity.text for entity in x.ents if entity.label_ == 'GPE'])
         for i in range(len(df['Text'][0])):
@@ -327,6 +390,15 @@ class NLPExtractor:
 
 class TextProcessing:
     def remove_cookies(self, text):
+        """
+        Remove paragraphs containing mentions of cookies or square brackets from the given text.
+
+        Args:
+            text (str): The input text.
+
+        Returns:
+            str: The cleared text without paragraphs containing cookies or square brackets.
+        """
         paragraphs = text.split('\n\n')
         filtered_paragraphs = [par.strip() for par in paragraphs if
                                "cookies" not in par and "[" not in par and "]" not in par]
@@ -334,6 +406,15 @@ class TextProcessing:
         return cleared_text
 
     def split_into_sentences(self, text):
+        """
+        Split the given text into individual sentences.
+
+        Args:
+            text (str): The input text.
+
+        Returns:
+            list: A list of sentences extracted from the text.
+        """
         text = " " + text + "  "
         text = text.replace("\n", " ")
         text = re.sub(prefixes, "\\1<prd>", text)
@@ -369,6 +450,16 @@ class ProcessingStages:
         self.nlp = spacy.load('en_core_web_sm')
 
     def get_county(self, path, save_path):
+        """
+        Process the data in the specified CSV file to extract counties and states information based on US cities.
+
+        Args:
+            path (str): The path to the input CSV file.
+            save_path (str): The path to save the processed data.
+
+        Returns:
+            None
+        """
         df = pd.read_csv(path)
         df_simplemaps = pd.read_csv("uscities.csv").replace("'", "")
         df.fillna(" ", inplace=True)
@@ -400,6 +491,16 @@ class ProcessingStages:
                         add_to_csv(pd.DataFrame([row]), save_path)
 
     def get_stage_1_articles(self, path, save_path):
+        """
+        Process the data in the specified CSV file to extract geolocation information from the articles.
+
+        Args:
+            path (str): The path to the input CSV file.
+            save_path (str): The path to save the processed data.
+
+        Returns:
+            None
+        """
         df = pd.read_csv(path)
         df.fillna("nan", inplace=True)
         df.columns = ["Url", "Text", "Title", "Article_date", "spacy_loc", "flair_loc", "dates", "numbers_context",
@@ -412,6 +513,16 @@ class ProcessingStages:
                     add_to_csv(pd.DataFrame([row]), save_path)
 
     def most_mentions(self, path, save_path):
+        """
+        Process the data in the specified CSV file to extract US geolocation information from the articles.
+
+        Args:
+            path (str): The path to the input CSV file.
+            save_path (str): The path to save the processed data.
+
+        Returns:
+            None
+        """
         df = pd.read_csv(path)
         df.fillna("nan", inplace=True)
         df.columns = ["Url", "Text", "Title", "Article_date", "spacy_loc", "flair_loc", "dates", "numbers_context",
@@ -424,6 +535,17 @@ class ProcessingStages:
                     add_to_csv(pd.DataFrame([row]), save_path)
 
     def get_data_articles(self, path, save_path, sample):
+        """
+        Process the data in the specified CSV file to extract various information (locations, dates, numbers) from the articles.
+
+        Args:
+            path (str): The path to the input CSV file.
+            save_path (str): The path to save the processed data.
+            sample (int): The number of samples to process.
+
+        Returns:
+            None
+        """
         df = pd.read_csv(path)
         df = df.sample(n=sample, random_state=1)
         df.to_csv("sample.csv")
@@ -445,6 +567,16 @@ class ProcessingStages:
                     add_to_csv(df_row, save_path)
 
     def get_gather_filter(self, path, save_path):
+        """
+        Process the data in the specified CSV file to filter and gather relevant information.
+
+        Args:
+            path (str): The path to the input CSV file.
+            save_path (str): The path to save the processed data.
+
+        Returns:
+            None
+        """
         df = pd.read_csv(path)
         df.columns = ["URL", "TEXT", "TITLE", "DATE", "spacy_LOCATIONS", "flair_LOCATIONS", "DATES", "NUMBERS_CONTEXT",
                       "NUMBERS", "GEOTEXT", "GEOTEXT_UNQ", "COUNTIES", "STATES", "STRATEGY 1", "STRATEGY 2"]
@@ -459,7 +591,7 @@ class ProcessingStages:
 
 pd.set_option('display.max_columns', None)
 sample = 100
-
+# run full process for the chosen number of sample articles
 covid_process = ProcessingStages()
 covid_process.get_data_articles("dataset_v5_1_full.csv", 'dataset_stage_1.csv', sample)
 covid_process.get_stage_1_articles('dataset_stage_1.csv', 'dataset_country_mentions.csv')
