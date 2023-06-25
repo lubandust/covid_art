@@ -1,7 +1,7 @@
 # Covid Articles Project
 ## Raw Data/Filter 1
 
-The `get_clean_and_entity_data` method performs several tasks to clean and extract relevant information from the raw dataset. Here's a breakdown of what it does:
+The `get_clean_and_entity_data` method performs several tasks to clean and extract relevant information from the raw dataset:
 
 1. Read the raw dataset from the specified path.
 2. Sample a specified number of rows from the dataset using the `sample` parameter.
