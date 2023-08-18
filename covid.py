@@ -1,12 +1,16 @@
 import ast
+import json
+import os
 import re
 
 import gensim.downloader as api
 import pandas as pd
 import spacy
+import numpy as np
 from flair.data import Sentence
 from flair.models import SequenceTagger
 from geotext import GeoText
+from os.path import exists
 
 # python -m spacy download en_core_web_sm
 # python -m spacy download en_core_web_trf
@@ -20,31 +24,14 @@ websites = "[.](com|net|org|io|gov|edu|me)"
 digits = "([0-9])"
 
 
-def add_to_csv(df, path):
-    """
-    Function to add a DataFrame to a CSV file.
-
-    Args:
-        df (pandas.DataFrame): DataFrame to be added.
-        path (str): Path to the CSV file.
-
-    Returns:
-        None
-    """
-    df.to_csv(path, mode='a', header=False, index=False)
-
+def save_to_csv(df, path):
+    if exists(path):
+        df.to_csv(path, mode='a', header=False, index=False)
+    else:
+        df.to_csv(path, mode='a', header=True, index=False)
 
 class LocationExtractor:
     def get_geotext_articles(self, row):
-        """
-        Function to extract locations using GeoText from the 'spacy_loc' and 'flair_loc' columns of a row.
-
-        Args:
-            row (pandas.Series): Row containing the 'spacy_loc' and 'flair_loc' columns.
-
-        Returns:
-            tuple: A tuple containing a list of mentions and a dictionary of country mentions.
-        """
         res = GeoText(str(row['spacy_loc']) + str(row['flair_loc']))
         mentions = []
         for city in res.cities:
@@ -56,16 +43,6 @@ class LocationExtractor:
         return mentions, res.country_mentions
 
     def get_US_geotext_articles(self, row):
-        """
-        Function to extract US locations using GeoText from the 'Mentions' column of a row.
-
-        Args:
-            row (pandas.Series): Row containing the 'Mentions' column.
-
-        Returns:
-            tuple: A tuple containing a boolean value indicating if the US is mentioned,
-                   a list of US city mentions, and a dictionary of country mentions.
-        """
         res = GeoText(row['Mentions'])
         mentions = []
         for city in res.cities:
@@ -77,37 +54,23 @@ class LocationExtractor:
             return False, None, None
 
     def get_strategy_2(self, row, df_simplemaps):
-        """
-        Function to extract locations using strategy 2 from the row and the SimpleMaps dataset.
-    
-        Args:
-            row (pandas.Series): Row containing the relevant columns.
-            df_simplemaps (pandas.DataFrame): SimpleMaps dataset containing city, county, and state information.
-    
-        Returns:
-            None
-        """
         result_county = {}
         result_state = {}
         counties = row['counties'].split('\n')[:-1]
         states = row['states'].split('\n')[:-1]
-        # Initialize result dictionaries for each location
         for location in row['US_cities']:
             result_state[location] = ''
             result_county[location] = ''
-        # Process county information
         for county in counties:
             county = county.replace("'", "")
             query = county.split(':')[0]
             result = county.split(':')[1].split(',')
             result_county[query] = result
-        # Process state information
         for state in states:
             state = state.replace("'", "")
             query = state.split(':')[0]
             result = state.split(':')[1].split(',')
             result_state[query] = result
-        # Extract locations using strategy 2
         for location in row['US_cities']:
             if len(result_county[location]) > 1 and len(result_state[location]) > 1:
                 df_county = df_simplemaps.query("city == \'" + location + "\'")
@@ -139,25 +102,13 @@ class LocationExtractor:
                                     result_state[location][0] + '\n'
 
     def get_strategy_1(self, row, df_simplemaps):
-        """
-        Function to extract locations using strategy 1 from the row and the SimpleMaps dataset.
-    
-        Args:
-            row (pandas.Series): Row containing the relevant columns.
-            df_simplemaps (pandas.DataFrame): SimpleMaps dataset containing city, county, and state information.
-    
-        Returns:
-            None
-        """
         result_county = {}
         result_state = {}
         counties = row['counties'].split('\n')[:-1]
         states = row['states'].split('\n')[:-1]
-        # Initialize result dictionaries for each location
         for location in row['US_cities']:
             result_state[location] = ''
             result_county[location] = ''
-        # Process county information
         for county in counties:
             query = county.split(':')[0]
             result = county.split(':')[1].split(',')
@@ -167,7 +118,7 @@ class LocationExtractor:
                         result_county[query] = county
             else:
                 result_county[query] = result[0]
-        # Process state information
+
         for state in states:
             query = state.split(':')[0]
             result = state.split(':')[1].split(',')
@@ -177,7 +128,6 @@ class LocationExtractor:
                         result_state[query] = state
             else:
                 result_state[query] = result[0]
-        # Extract locations using strategy 1
         for location in row['US_cities']:
             if result_county[location] != '' and result_state[location] != '':
                 row['strategy_1'] = row['strategy_1'] + location + ', ' + result_county[location] + ', ' + result_state[
@@ -210,32 +160,16 @@ class NLPExtractor:
         self.tagger = SequenceTagger.load('ner')
 
     def get_number(self, text):
-        """
-        Extract numbers from the given text.
-
-        Args:
-            text (str): The input text.
-
-        Returns:
-            str: A comma-separated string of extracted numbers, or 'nan' if no numbers are found.
-        """
         clear_numbers = ""
         doc = self.nlp(text)
         for entity in doc.ents:
             if entity.label_ == 'CARDINAL' or entity.label_ == 'QUANTITY':
                 clear_numbers = clear_numbers + entity.text + ', '
+        if not clear_numbers:
+            return float('nan')
         return clear_numbers[:-2]
 
     def check_cardinal(self, df):
-        """
-        Check for cardinal numbers in the given DataFrame.
-
-        Args:
-            df (pandas.DataFrame): The DataFrame containing the 'Text' column.
-
-        Returns:
-            pandas.DataFrame: The updated DataFrame with additional columns 'Size_context' and 'Gathered_size'.
-        """
         df['Size_context'] = df['Text'].apply(
             lambda x: [(str(df['Text'][0][entity.start:]).split(" ", 4)[:4]) for entity in x.ents if
                        entity.label_ == 'CARDINAL' or entity.label_ == 'QUANTITY'])
@@ -244,48 +178,34 @@ class NLPExtractor:
         return df
 
     def get_gathering_amount(self, text):
-        """
-        Extract gathering amounts from the given text.
-
-        Args:
-            text (str): The input text.
-
-        Returns:
-            str: A comma-separated string of extracted gathering amounts.
-        """
-        x = ast.literal_eval(text)
-        gathering_numbers = ""
-        for chunk in x:
-            for word in chunk:
-                word = re.sub(r'[^\w\d\s]+', '', word)
-                if len(word) > 5:
-                    doc = self.nlp(word)
-                    if word[-1] == 's':
-                        word = word[:-1]
-                    if ((doc[0].tag_ == 'NNP') or (doc[0].tag_ == 'NNS') or (doc[0].tag_ == 'NN')):
-                        try:
-                            scores = self.model_glove.relative_cosine_similarity("people", word)
-                            non_human = self.model_glove.relative_cosine_similarity("object", word)
-                            if ((scores >= 0.06) and (non_human <= 0.052)) or ("people" in word) or (
-                                    "person" in word):
-                                gathering_numbers = gathering_numbers + ' '.join(
-                                    str(v) for v in chunk) + ', '
-                            else:
+        text = json.dumps(text)
+        if text != 'nan':
+            print(text)
+            text = text.replace('\n', '')
+            x = ast.literal_eval(text)
+            gathering_numbers = ""
+            for chunk in x:
+                for word in chunk:
+                    word = re.sub(r'[^\w\d\s]+', '', word)
+                    if len(word) > 5:
+                        doc = self.nlp(word)
+                        if word[-1] == 's':
+                            word = word[:-1]
+                        if ((doc[0].tag_ == 'NNP') or (doc[0].tag_ == 'NNS') or (doc[0].tag_ == 'NN')):
+                            try:
+                                scores = self.model_glove.relative_cosine_similarity("people", word)
+                                non_human = self.model_glove.relative_cosine_similarity("object", word)
+                                if ((scores >= 0.06) and (non_human <= 0.052)) or ("people" in word) or (
+                                        "person" in word):
+                                    gathering_numbers = gathering_numbers + ' '.join(
+                                        str(v) for v in chunk) + ', '
+                                else:
+                                    pass
+                            except KeyError:
                                 pass
-                        except KeyError:
-                            pass
-        return gathering_numbers
+            return gathering_numbers
 
     def detect_tense(self, text):
-        """
-        Detect the tense of the given text.
-
-        Args:
-            text (str): The input text.
-
-        Returns:
-            str: The detected tense ('past_tense', 'present_tense', or 'future_tense').
-        """
         tex = text.replace('\n', ' ')
         sents = re.split(r'(?<=[^A-Z].[.?]) +(?=[A-Z])', tex)
         tenses = {"past_tense": 0, "present_tense": 0, "future_tense": 0}
@@ -305,15 +225,6 @@ class NLPExtractor:
         return tense
 
     def identify_futuristic(self, df):
-        """
-        Identify futuristic information in the given DataFrame.
-
-        Args:
-            df (pandas.DataFrame): The DataFrame containing the 'GATHERING_AMOUNT' and 'TEXT' columns.
-
-        Returns:
-            pandas.DataFrame: The updated DataFrame with additional columns 'GATHER_SENTS' and 'TENSE/PT/FT'.
-        """
         lines = df["GATHERING_AMOUNT"].split(', ')
         lines = list(filter(None, lines))
         sents = TextProcessing().split_into_sentences(df["TEXT"])
@@ -342,28 +253,10 @@ class NLPExtractor:
         return df
 
     def get_date(self, df):
-        """
-        Extract dates from the given DataFrame.
-
-        Args:
-            df (pandas.DataFrame): The DataFrame containing the 'Text' column.
-
-        Returns:
-            pandas.DataFrame: The updated DataFrame with an additional 'Date' column.
-        """
         df['Date'] = df['Text'].apply(lambda x: [entity.text for entity in x.ents if entity.label_ == 'DATE'])
         return df
 
     def get_location(self, df):
-        """
-        Extract locations from the given DataFrame.
-
-        Args:
-            df (pandas.DataFrame): The DataFrame containing the 'Text' column.
-
-        Returns:
-            pandas.DataFrame: The updated DataFrame with additional columns 'Location_spacy' and 'Location_flair'.
-        """
         possible_loc_list = []
         df['Location_spacy'] = df['Text'].apply(lambda x: [entity.text for entity in x.ents if entity.label_ == 'GPE'])
         for i in range(len(df['Text'][0])):
@@ -390,15 +283,6 @@ class NLPExtractor:
 
 class TextProcessing:
     def remove_cookies(self, text):
-        """
-        Remove paragraphs containing mentions of cookies or square brackets from the given text.
-
-        Args:
-            text (str): The input text.
-
-        Returns:
-            str: The cleared text without paragraphs containing cookies or square brackets.
-        """
         paragraphs = text.split('\n\n')
         filtered_paragraphs = [par.strip() for par in paragraphs if
                                "cookies" not in par and "[" not in par and "]" not in par]
@@ -406,15 +290,6 @@ class TextProcessing:
         return cleared_text
 
     def split_into_sentences(self, text):
-        """
-        Split the given text into individual sentences.
-
-        Args:
-            text (str): The input text.
-
-        Returns:
-            list: A list of sentences extracted from the text.
-        """
         text = " " + text + "  "
         text = text.replace("\n", " ")
         text = re.sub(prefixes, "\\1<prd>", text)
@@ -449,22 +324,12 @@ class ProcessingStages:
         self.nlp_extractor = NLPExtractor()
         self.nlp = spacy.load('en_core_web_sm')
 
-    def get_county(self, path, save_path):
-        """
-        Process the data in the specified CSV file to extract counties and states information based on US cities.
-
-        Args:
-            path (str): The path to the input CSV file.
-            save_path (str): The path to save the processed data.
-
-        Returns:
-            None
-        """
-        df = pd.read_csv(path)
+    def apply_strategies(self, df):
         df_simplemaps = pd.read_csv("uscities.csv").replace("'", "")
         df.fillna(" ", inplace=True)
-        df.columns = ["Url", "Text", "Title", "Article_date", "spacy_loc", "flair_loc", "dates", "numbers_context",
+        df.columns = ["ID", "Url", "Text", "Title", "Article_date", "spacy_loc", "flair_loc", "dates", "numbers_context",
                       "numbers", "Mentions", "US_cities"]
+        concatenated_data = []
         states = list(set(df_simplemaps['state_name'].tolist()))
         for index, row in df.iterrows():
             city_list = list(set(ast.literal_eval(str(row['US_cities']))))
@@ -488,75 +353,56 @@ class ProcessingStages:
                     self.locations_extractor.get_strategy_1(row, df_simplemaps)
                     self.locations_extractor.get_strategy_2(row, df_simplemaps)
                     if row['strategy_1'] != '' or row['strategy_2'] != '':
-                        add_to_csv(pd.DataFrame([row]), save_path)
+                        #add_to_csv(pd.DataFrame([row]), save_path)
+                        concatenated_data.append(pd.DataFrame([row]))
+        concatenated_df = pd.concat(concatenated_data, ignore_index=True)
+        concatenated_df = concatenated_df.applymap(lambda x: np.nan if isinstance(x, list) and len(x) == 0 else x)
+        return concatenated_df
 
-    def get_stage_1_articles(self, path, save_path):
-        """
-        Process the data in the specified CSV file to extract geolocation information from the articles.
-
-        Args:
-            path (str): The path to the input CSV file.
-            save_path (str): The path to save the processed data.
-
-        Returns:
-            None
-        """
-        df = pd.read_csv(path)
+    def get_country_mentions_articles(self, df):
         df.fillna("nan", inplace=True)
-        df.columns = ["Url", "Text", "Title", "Article_date", "spacy_loc", "flair_loc", "dates", "numbers_context",
+        df.columns = ["ID", "Url", "Text", "Title", "Article_date", "spacy_loc", "flair_loc", "dates", "numbers_context",
                       "numbers"]
+        concatenated_data = []
         for index, row in df.iterrows():
             if row['Text'] != 'nan':
                 country_mentions, mentions_lst = self.locations_extractor.get_geotext_articles(row)
                 row["Mentions"] = ', '.join(country_mentions)
                 if len(row["Mentions"]) > 0:
-                    add_to_csv(pd.DataFrame([row]), save_path)
+                    #add_to_csv(pd.DataFrame([row]), save_path)
+                    concatenated_data.append(pd.DataFrame([row]))
+        concatenated_df = pd.concat(concatenated_data, ignore_index=True)
+        concatenated_df = concatenated_df.applymap(lambda x: np.nan if isinstance(x, list) and len(x) == 0 else x)
+        return concatenated_df
 
-    def most_mentions(self, path, save_path):
-        """
-        Process the data in the specified CSV file to extract US geolocation information from the articles.
 
-        Args:
-            path (str): The path to the input CSV file.
-            save_path (str): The path to save the processed data.
-
-        Returns:
-            None
-        """
-        df = pd.read_csv(path)
+    def get_us_articles(self, df):
         df.fillna("nan", inplace=True)
-        df.columns = ["Url", "Text", "Title", "Article_date", "spacy_loc", "flair_loc", "dates", "numbers_context",
+        df.columns = ["ID", "Url", "Text", "Title", "Article_date", "spacy_loc", "flair_loc", "dates", "numbers_context",
                       "numbers", "Mentions"]
+        concatenated_data = []
         for index, row in df.iterrows():
             if row['Text'] != 'nan':
                 if_US, US_mentions, mentions_lst = self.locations_extractor.get_US_geotext_articles(row)
                 if if_US:
                     row['US_cities'] = US_mentions
-                    add_to_csv(pd.DataFrame([row]), save_path)
+                    #add_to_csv(pd.DataFrame([row]), save_path)
+                    concatenated_data.append(pd.DataFrame([row]))
+        concatenated_df = pd.concat(concatenated_data, ignore_index=True)
+        concatenated_df = concatenated_df.applymap(lambda x: np.nan if isinstance(x, list) and len(x) == 0 else x)
+        return concatenated_df
 
-    def get_data_articles(self, path, save_path, sample):
-        """
-        Process the data in the specified CSV file to extract various information (locations, dates, numbers) from the articles.
 
-        Args:
-            path (str): The path to the input CSV file.
-            save_path (str): The path to save the processed data.
-            sample (int): The number of samples to process.
-
-        Returns:
-            None
-        """
-        df = pd.read_csv(path)
-        df = df.sample(n=sample, random_state=1)
-        df.to_csv("sample.csv")
-        df = pd.read_csv("sample.csv")
+    def get_clean_and_entity_data(self, df):
         df.fillna("nan", inplace=True)
-        df.columns = ["idx", "Text", "Title", "Code", "Url", "Date"]
+        df.columns = ["ID", "Text", "Title", "Code", "Url", "Date"]
+        concatenated_data = []
         for index, row in df.iterrows():
             if row['Text'] != 'nan':
                 row['Text'] = TextProcessing().remove_cookies(row['Text'])
                 if len(row['Text']) < 300000:
-                    df_row = pd.DataFrame({'Url': [row['Url']]})
+                    df_row = pd.DataFrame({'ID': [row['ID']]})
+                    df_row["URL"] = row["Url"]
                     df_row["Text"] = [self.nlp(row['Text'])]
                     df_row["Title"] = row["Title"]
                     df_row["Article_date"] = row["Date"]
@@ -564,37 +410,51 @@ class ProcessingStages:
                     df_row = self.nlp_extractor.get_date(df_row)
                     df_row = self.nlp_extractor.check_cardinal(df_row)
                     df_row["Text"] = row['Text']
-                    add_to_csv(df_row, save_path)
+                    #add_to_csv(df_row, save_path)
+                    concatenated_data.append(df_row)
 
-    def get_gather_filter(self, path, save_path):
-        """
-        Process the data in the specified CSV file to filter and gather relevant information.
+        concatenated_df = pd.concat(concatenated_data, ignore_index=True)
+        #concatenated_df = concatenated_df.applymap(lambda x: np.nan if isinstance(x, list) and len(x) == 0 else x)
+        return concatenated_df
 
-        Args:
-            path (str): The path to the input CSV file.
-            save_path (str): The path to save the processed data.
-
-        Returns:
-            None
-        """
-        df = pd.read_csv(path)
-        df.columns = ["URL", "TEXT", "TITLE", "DATE", "spacy_LOCATIONS", "flair_LOCATIONS", "DATES", "NUMBERS_CONTEXT",
+    def get_gather_filter(self, df):
+        df.columns = ["ID", "URL", "TEXT", "TITLE", "DATE", "spacy_LOCATIONS", "flair_LOCATIONS", "DATES", "NUMBERS_CONTEXT",
                       "NUMBERS", "GEOTEXT", "GEOTEXT_UNQ", "COUNTIES", "STATES", "STRATEGY 1", "STRATEGY 2"]
         df['GATHERING_AMOUNT'] = df['NUMBERS_CONTEXT'].apply(lambda s: self.nlp_extractor.get_gathering_amount(s))
         df['GATHERING_NUMBER'] = df['GATHERING_AMOUNT'].apply(lambda s: self.nlp_extractor.get_number(s))
         df = df.apply(lambda s: self.nlp_extractor.identify_futuristic(s), axis=1)
-        df = df[df[['GATHERING_NUMBER']].notnull().all(1)]
+        df = df.dropna(subset=['GATHERING_NUMBER'])
         df = df[~df['TENSE/PT/FT'].str.contains('future')]
-        df.to_csv(save_path, index=False)
-        df.to_excel(save_path[:-4] + ".xlsx")
+        save_to_csv(df, 'filter_5.csv')
+        #df.to_excel("filter_5.xlsx")
 
 
 pd.set_option('display.max_columns', None)
-sample = 100
-# run full process for the chosen number of sample articles
 covid_process = ProcessingStages()
-covid_process.get_data_articles("dataset_v5_1_full.csv", 'dataset_stage_1.csv', sample)
-covid_process.get_stage_1_articles('dataset_stage_1.csv', 'dataset_country_mentions.csv')
-covid_process.most_mentions('dataset_country_mentions.csv', 'dataset_US.csv')
-covid_process.get_county("dataset_US.csv", "dataset_strategies.csv")
-covid_process.get_gather_filter("dataset_strategies.csv", "dataset_gathering.csv")
+file_path = "dataset_v5_1_full.csv"
+chunksize = 100
+progress_file = "progress.txt"
+start_chunk = 0
+
+#filter_4 = pd.read_csv('filter_4.csv')
+#print(filter_4)
+#covid_process.get_gather_filter(filter_4)
+
+if os.path.exists(progress_file):
+    with open(progress_file, "r") as f:
+        start_chunk = int(f.read().strip())
+
+for i, chunk in enumerate(pd.read_csv(file_path, chunksize=chunksize, skiprows=range(1, start_chunk * chunksize + 1))):
+    chunk.insert(0, 'ID', range(i * chunksize + 1, (i + 1) * chunksize + 1))
+    filter_1 = covid_process.get_clean_and_entity_data(chunk)
+    filter_2 = covid_process.get_country_mentions_articles(filter_1)
+    filter_3 = covid_process.get_us_articles(filter_2)
+    filter_4 = covid_process.apply_strategies(filter_3)
+    covid_process.get_gather_filter(filter_4)
+    save_to_csv(filter_1, 'filter_1.csv')
+    save_to_csv(filter_2, 'filter_2.csv')
+    save_to_csv(filter_3, 'filter_3.csv')
+    save_to_csv(filter_4, 'filter_4.csv')
+
+    with open(progress_file, "w") as f:
+        f.write(str(i + start_chunk))
