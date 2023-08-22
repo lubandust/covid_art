@@ -332,7 +332,8 @@ class ProcessingStages:
         concatenated_data = []
         states = list(set(df_simplemaps['state_name'].tolist()))
         for index, row in df.iterrows():
-            city_list = list(set(ast.literal_eval(str(row['US_cities']))))
+            city_list = list(set(row['US_cities']))
+            #city_list = list(set(ast.literal_eval(str(row['US_cities']))))
             row['US_cities'] = city_list
             row['counties'] = ''
             row['states'] = ''
@@ -414,7 +415,7 @@ class ProcessingStages:
                     concatenated_data.append(df_row)
 
         concatenated_df = pd.concat(concatenated_data, ignore_index=True)
-        #concatenated_df = concatenated_df.applymap(lambda x: np.nan if isinstance(x, list) and len(x) == 0 else x)
+        concatenated_df = concatenated_df.applymap(lambda x: np.nan if isinstance(x, list) and len(x) == 0 else x)
         return concatenated_df
 
     def get_gather_filter(self, df):
@@ -429,32 +430,32 @@ class ProcessingStages:
         #df.to_excel("filter_5.xlsx")
 
 
-pd.set_option('display.max_columns', None)
-covid_process = ProcessingStages()
-file_path = "dataset_v5_1_full.csv"
-chunksize = 100
-progress_file = "progress.txt"
-start_chunk = 0
+def run_for_full_df(file_path = "dataset_v5_1_full.csv", chunksize = 100):
+    covid_process = ProcessingStages()
 
-#filter_4 = pd.read_csv('filter_4.csv')
-#print(filter_4)
-#covid_process.get_gather_filter(filter_4)
+    progress_file = "progress.txt"
+    start_chunk = 0
 
-if os.path.exists(progress_file):
-    with open(progress_file, "r") as f:
-        start_chunk = int(f.read().strip())
+    if os.path.exists(progress_file):
+        with open(progress_file, "r") as f:
+            start_chunk = int(f.read().strip())
 
-for i, chunk in enumerate(pd.read_csv(file_path, chunksize=chunksize, skiprows=range(1, start_chunk * chunksize + 1))):
-    chunk.insert(0, 'ID', range(i * chunksize + 1, (i + 1) * chunksize + 1))
-    filter_1 = covid_process.get_clean_and_entity_data(chunk)
-    filter_2 = covid_process.get_country_mentions_articles(filter_1)
-    filter_3 = covid_process.get_us_articles(filter_2)
-    filter_4 = covid_process.apply_strategies(filter_3)
-    covid_process.get_gather_filter(filter_4)
-    save_to_csv(filter_1, 'filter_1.csv')
-    save_to_csv(filter_2, 'filter_2.csv')
-    save_to_csv(filter_3, 'filter_3.csv')
-    save_to_csv(filter_4, 'filter_4.csv')
+    for i, chunk in enumerate(
+            pd.read_csv(file_path, chunksize=chunksize, skiprows=range(1, start_chunk * chunksize + 1))):
+        print(i)
+        chunk.insert(0, 'ID', range((i + start_chunk) * chunksize + 1, (i + 1 + start_chunk) * chunksize + 1))
+        filter_1 = covid_process.get_clean_and_entity_data(chunk)
+        filter_2 = covid_process.get_country_mentions_articles(filter_1)
+        filter_3 = covid_process.get_us_articles(filter_2)
+        filter_4 = covid_process.apply_strategies(filter_3)
+        covid_process.get_gather_filter(filter_4)
+        save_to_csv(filter_1, 'filter_1.csv')
+        save_to_csv(filter_2, 'filter_2.csv')
+        save_to_csv(filter_3, 'filter_3.csv')
+        save_to_csv(filter_4, 'filter_4.csv')
 
-    with open(progress_file, "w") as f:
-        f.write(str(i + start_chunk))
+        with open(progress_file, "w") as f:
+            f.write(str(i + start_chunk + 1))
+
+
+run_for_full_df()
