@@ -418,6 +418,19 @@ class ProcessingStages:
         concatenated_df = concatenated_df.applymap(lambda x: np.nan if isinstance(x, list) and len(x) == 0 else x)
         return concatenated_df
 
+    def updated_gather_sents(self, df):
+        sentences = sent_tokenize(df["TEXT"].replace('\n', ' '))
+        numbers_to_search = df["GATHERING_AMOUNT"].replace('\n', ' ').split(', ')[:-1]
+        numbers_to_search = [word for word in numbers_to_search if (any(char.isdigit() for char in word) or any(keyword in word for keyword in ['hundred', 'dozen', 'thousand', 'ten']))]
+        gathering_sents = []
+        for num in numbers_to_search:
+            for sentence in sentences:
+                if num.lower() in sentence.lower():
+                    if sentence not in gathering_sents:
+                        gathering_sents.append(sentence)
+    df['GATHER_SENTS'] = ',\n'.join(gathering_sents)
+    return df['GATHER_SENTS']
+
     def get_gather_filter(self, df):
         df.columns = ["ID", "URL", "TEXT", "TITLE", "DATE", "spacy_LOCATIONS", "flair_LOCATIONS", "DATES", "NUMBERS_CONTEXT",
                       "NUMBERS", "GEOTEXT", "GEOTEXT_UNQ", "COUNTIES", "STATES", "STRATEGY 1", "STRATEGY 2"]
@@ -426,6 +439,8 @@ class ProcessingStages:
         df = df.apply(lambda s: self.nlp_extractor.identify_futuristic(s), axis=1)
         df = df.dropna(subset=['GATHERING_NUMBER'])
         df = df[~df['TENSE/PT/FT'].str.contains('future')]
+        df['GATHER_SENTS'] = df.apply(lambda s: updated_gather_sents(s), axis=1)
+        df = df.dropna(subset=['GATHER_SENTS'])
         save_to_csv(df, 'filter_5.csv')
         #df.to_excel("filter_5.xlsx")
 
