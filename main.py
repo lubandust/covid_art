@@ -7,13 +7,14 @@ import gensim.downloader as api
 import pandas as pd
 import spacy
 import numpy as np
+import datetime
 from flair.data import Sentence
 from flair.models import SequenceTagger
 from geotext import GeoText
 from os.path import exists
 
-# python -m spacy download en_core_web_sm
-# python -m spacy download en_core_web_trf
+#python -m spacy download en_core_web_sm
+#python -m spacy download en_core_web_trf
 
 alphabets = "([A-Za-z])"
 prefixes = "(Mr|St|Mrs|Ms|Dr)[.]"
@@ -418,19 +419,6 @@ class ProcessingStages:
         concatenated_df = concatenated_df.applymap(lambda x: np.nan if isinstance(x, list) and len(x) == 0 else x)
         return concatenated_df
 
-    def updated_gather_sents(self, df):
-        sentences = sent_tokenize(df["TEXT"].replace('\n', ' '))
-        numbers_to_search = df["GATHERING_AMOUNT"].replace('\n', ' ').split(', ')[:-1]
-        numbers_to_search = [word for word in numbers_to_search if (any(char.isdigit() for char in word) or any(keyword in word for keyword in ['hundred', 'dozen', 'thousand', 'ten']))]
-        gathering_sents = []
-        for num in numbers_to_search:
-            for sentence in sentences:
-                if num.lower() in sentence.lower():
-                    if sentence not in gathering_sents:
-                        gathering_sents.append(sentence)
-    df['GATHER_SENTS'] = ',\n'.join(gathering_sents)
-    return df['GATHER_SENTS']
-
     def get_gather_filter(self, df):
         df.columns = ["ID", "URL", "TEXT", "TITLE", "DATE", "spacy_LOCATIONS", "flair_LOCATIONS", "DATES", "NUMBERS_CONTEXT",
                       "NUMBERS", "GEOTEXT", "GEOTEXT_UNQ", "COUNTIES", "STATES", "STRATEGY 1", "STRATEGY 2"]
@@ -439,13 +427,11 @@ class ProcessingStages:
         df = df.apply(lambda s: self.nlp_extractor.identify_futuristic(s), axis=1)
         df = df.dropna(subset=['GATHERING_NUMBER'])
         df = df[~df['TENSE/PT/FT'].str.contains('future')]
-        df['GATHER_SENTS'] = df.apply(lambda s: updated_gather_sents(s), axis=1)
-        df = df.dropna(subset=['GATHER_SENTS'])
         save_to_csv(df, 'filter_5.csv')
         #df.to_excel("filter_5.xlsx")
 
 
-def run_for_full_df(file_path = "dataset_v5_1_full.csv", chunksize = 100):
+def run_for_full_df(file_path = "dataset_v5_1_full.csv", chunksize = 1000):
     covid_process = ProcessingStages()
 
     progress_file = "progress.txt"
@@ -457,7 +443,7 @@ def run_for_full_df(file_path = "dataset_v5_1_full.csv", chunksize = 100):
 
     for i, chunk in enumerate(
             pd.read_csv(file_path, chunksize=chunksize, skiprows=range(1, start_chunk * chunksize + 1))):
-        print(i)
+        print(i + 1 + start_chunk)
         chunk.insert(0, 'ID', range((i + start_chunk) * chunksize + 1, (i + 1 + start_chunk) * chunksize + 1))
         filter_1 = covid_process.get_clean_and_entity_data(chunk)
         filter_2 = covid_process.get_country_mentions_articles(filter_1)
@@ -468,9 +454,10 @@ def run_for_full_df(file_path = "dataset_v5_1_full.csv", chunksize = 100):
         save_to_csv(filter_2, 'filter_2.csv')
         save_to_csv(filter_3, 'filter_3.csv')
         save_to_csv(filter_4, 'filter_4.csv')
-
+        print("batch", str(i + start_chunk + 1), "time", datetime.datetime.now())
         with open(progress_file, "w") as f:
             f.write(str(i + start_chunk + 1))
+
 
 
 run_for_full_df()
